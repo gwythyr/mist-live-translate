@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#12141d">
+<title>Міст — живий переклад на двох</title>
+<style>
+  :root {
+    --ink: #12141d;
+    --ink-2: #1a1d2a;
+    --ink-3: #232738;
+    --paper: #ece9e1;
+    --muted: #8b8fa3;
+    --gold: #d9a441;       /* канал A — ліве вухо */
+    --gold-dim: #6e5522;
+    --sky: #6fb4d9;        /* канал B — праве вухо */
+    --sky-dim: #2f5468;
+    --danger: #c75146;
+    --ok: #7bb662;
+    --radius: 14px;
+    --seam: linear-gradient(180deg, var(--gold), var(--sky));
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    background: var(--ink);
+    color: var(--paper);
+    font: 16px/1.45 -apple-system, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    display: flex; flex-direction: column;
+    max-width: 560px; margin: 0 auto;
+    min-height: 100dvh;
+  }
+
+  /* ── Шапка ── */
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 16px 10px;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand .seam {
+    width: 4px; height: 34px; border-radius: 2px;
+    background: var(--seam);
+  }
+  .brand h1 {
+    font-size: 22px; font-weight: 800; letter-spacing: 0.01em;
+  }
+  .brand p { font-size: 11.5px; color: var(--muted); margin-top: -2px; }
+  #btnSettings {
+    background: var(--ink-2); border: 1px solid var(--ink-3); color: var(--paper);
+    width: 40px; height: 40px; border-radius: 12px; font-size: 18px;
+    display: grid; place-items: center; cursor: pointer;
+  }
+
+  /* ── Налаштування ── */
+  #settings {
+    margin: 0 12px 10px; padding: 14px;
+    background: var(--ink-2); border: 1px solid var(--ink-3); border-radius: var(--radius);
+    display: none; flex-direction: column; gap: 12px;
+  }
+  #settings.open { display: flex; }
+  label.field { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; color: var(--muted); }
+  input[type="password"], input[type="text"], select {
+    background: var(--ink); border: 1px solid var(--ink-3); color: var(--paper);
+    border-radius: 10px; padding: 11px 12px; font-size: 15px; width: 100%;
+    appearance: none; -webkit-appearance: none;
+  }
+  input:focus, select:focus { outline: 2px solid var(--sky-dim); border-color: transparent; }
+  .keyrow { display: flex; gap: 8px; }
+  .keyrow button {
+    background: var(--ink-3); border: none; color: var(--paper); border-radius: 10px;
+    padding: 0 14px; font-size: 13px; cursor: pointer;
+  }
+  .hint { font-size: 11.5px; color: var(--muted); }
+  .hint a { color: var(--sky); }
+
+  /* ── Мовні панелі ── */
+  #ears {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 0;
+    margin: 0 12px; position: relative;
+    border-radius: var(--radius); overflow: hidden;
+    border: 1px solid var(--ink-3);
+  }
+  #ears::after { /* шов-міст поміж каналами */
+    content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 2px;
+    transform: translateX(-50%);
+    background: var(--seam); opacity: .85;
+  }
+  .ear { background: var(--ink-2); padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+  .ear .tag {
+    font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; font-weight: 700;
+  }
+  .ear[data-side="L"] .tag { color: var(--gold); }
+  .ear[data-side="R"] .tag { color: var(--sky); }
+  .ear select { font-weight: 600; }
+  .earstate { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); min-height: 20px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--ink-3); flex: none; transition: background .15s; }
+  .ear[data-side="L"] .dot.live { background: var(--gold); box-shadow: 0 0 10px var(--gold); }
+  .ear[data-side="R"] .dot.live { background: var(--sky); box-shadow: 0 0 10px var(--sky); }
+  .dot.err { background: var(--danger); }
+  .dot.on { background: var(--ok); }
+
+  #swap {
+    position: absolute; left: 50%; top: 8px; transform: translateX(-50%);
+    z-index: 2; width: 34px; height: 34px; border-radius: 50%;
+    background: var(--ink); border: 1px solid var(--ink-3); color: var(--paper);
+    font-size: 15px; cursor: pointer; display: grid; place-items: center;
+  }
+
+  /* ── Мікрофон + кнопка ── */
+  #micWrap { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 18px 12px 8px; }
+  #micBar {
+    width: min(300px, 70%); height: 5px; border-radius: 3px; background: var(--ink-3); overflow: hidden;
+  }
+  #micLevel { height: 100%; width: 0%; background: var(--seam); background-size: 300px 5px; transition: width .08s linear; }
+  #btnMain {
+    width: 108px; height: 108px; border-radius: 50%;
+    border: none; cursor: pointer; font-weight: 800; font-size: 16px; color: var(--ink);
+    background: var(--paper);
+    box-shadow: 0 0 0 6px var(--ink-2), 0 0 0 7px var(--ink-3);
+    transition: transform .1s;
+  }
+  #btnMain:active { transform: scale(.96); }
+  #btnMain.running {
+    background: var(--danger); color: var(--paper);
+    animation: pulse 1.8s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%,100% { box-shadow: 0 0 0 6px var(--ink-2), 0 0 0 7px rgba(199,81,70,.55); }
+    50%     { box-shadow: 0 0 0 6px var(--ink-2), 0 0 0 14px rgba(199,81,70,0); }
+  }
+  #status { font-size: 12.5px; color: var(--muted); text-align: center; min-height: 18px; padding: 0 16px; }
+  #status.error { color: var(--danger); }
+
+  /* ── Стрічка перекладів ── */
+  #feed {
+    flex: 1; overflow-y: auto; margin: 10px 12px 12px; padding: 4px 2px 12px;
+    display: flex; flex-direction: column; gap: 8px;
+    -webkit-overflow-scrolling: touch;
+  }
+  #feed:empty::before {
+    content: "Тут з’явиться текст перекладів обох напрямків";
+    color: var(--muted); font-size: 13px; text-align: center; margin-top: 24px;
+  }
+  .msg {
+    max-width: 86%; padding: 9px 12px; border-radius: 12px; font-size: 14.5px;
+    background: var(--ink-2); border: 1px solid var(--ink-3);
+    word-break: break-word;
+  }
+  .msg .who { display: block; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; font-weight: 700; margin-bottom: 2px; }
+  .msg.L { align-self: flex-start; border-left: 3px solid var(--gold); }
+  .msg.L .who { color: var(--gold); }
+  .msg.R { align-self: flex-end;  border-right: 3px solid var(--sky); }
+  .msg.R .who { color: var(--sky); }
+  .msg.sys { align-self: center; font-size: 12px; color: var(--muted); background: none; border: none; padding: 2px; }
+
+  #headsUp {
+    margin: 6px 12px 0; padding: 10px 12px; border-radius: 12px;
+    background: var(--ink-2); border: 1px dashed var(--ink-3);
+    font-size: 12.5px; color: var(--muted);
+  }
+  #headsUp b.l { color: var(--gold); } #headsUp b.r { color: var(--sky); }
+
+  @media (prefers-reduced-motion: reduce) {
+    #btnMain.running { animation: none; }
+    * { transition: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="seam"></div>
+    <div>
+      <h1>Міст</h1>
+      <p>жива розмова двома мовами · один телефон</p>
+    </div>
+  </div>
+  <button id="btnSettings" aria-label="Налаштування">⚙</button>
+</header>
+
+<div id="settings">
+  <label class="field">Gemini API-ключ
+    <div class="keyrow">
+      <input type="password" id="apiKey" placeholder="AIza..." autocomplete="off">
+      <button id="btnShowKey" type="button">👁</button>
+    </div>
+  </label>
+  <div class="hint">Ключ зберігається лише на цьому пристрої. Отримати: <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>. Модель: gemini-3.5-live-translate-preview (public preview).</div>
+</div>
+
+<div id="ears">
+  <button id="swap" title="Поміняти вуха місцями" aria-label="Поміняти канали">⇄</button>
+  <div class="ear" data-side="L">
+    <span class="tag">◀ Лівий навушник чує</span>
+    <select id="langL" aria-label="Мова лівого навушника"></select>
+    <div class="earstate"><span class="dot" id="dotL"></span><span id="stateL">вимкнено</span></div>
+  </div>
+  <div class="ear" data-side="R">
+    <span class="tag">Правий навушник чує ▶</span>
+    <select id="langR" aria-label="Мова правого навушника"></select>
+    <div class="earstate"><span class="dot" id="dotR"></span><span id="stateR">вимкнено</span></div>
+  </div>
+</div>
+
+<div id="headsUp">
+  Підключіть навушники та розділіть їх: <b class="l">лівий</b> — тому, хто розуміє мову зліва, <b class="r">правий</b> — тому, хто розуміє мову справа. Говоріть по черзі в телефон — кожен почує лише переклад «своєю» мовою.
+</div>
+
+<div id="micWrap">
+  <div id="micBar"><div id="micLevel"></div></div>
+  <button id="btnMain">Почати</button>
+  <div id="status">Введіть API-ключ у налаштуваннях і натисніть «Почати»</div>
+</div>
+
+<div id="feed" aria-live="polite"></div>
+
+<script>
+"use strict";
+
+/* ────────────────────────────── Мови (BCP-47, Live Translate) ── */
+const LANGS = [
+  ["uk","Українська"],["ro","Română"],["en","English"],["de","Deutsch"],
+  ["pl","Polski"],["ru","Русский"],["fr","Français"],["es","Español"],
+  ["it","Italiano"],["pt-PT","Português (PT)"],["pt-BR","Português (BR)"],
+  ["hu","Magyar"],["cs","Čeština"],["sk","Slovenčina"],["bg","Български"],
+  ["sr","Srpski"],["hr","Hrvatski"],["sl","Slovenščina"],["mk","Македонски"],
+  ["sq","Shqip"],["el","Ελληνικά"],["tr","Türkçe"],["nl","Nederlands"],
+  ["sv","Svenska"],["no","Norsk"],["da","Dansk"],["fi","Suomi"],
+  ["et","Eesti"],["lv","Latviešu"],["lt","Lietuvių"],["be","Беларуская"],
+  ["ka","ქართული"],["hy","Հայերեն"],["az","Azərbaycan"],["kk","Қазақ"],
+  ["uz","Oʻzbek"],["mn","Монгол"],["he","עברית"],["ar","العربية"],
+  ["fa","فارسی"],["ur","اردو"],["hi","हिन्दी"],["bn","বাংলা"],
+  ["pa","ਪੰਜਾਬੀ"],["gu","ગુજરાતી"],["mr","मराठी"],["ta","தமிழ்"],
+  ["te","తెలుగు"],["kn","ಕನ್ನಡ"],["ml","മലയാളം"],["si","සිංහල"],
+  ["ne","नेपाली"],["th","ไทย"],["lo","ລາວ"],["km","ខ្មែរ"],
+  ["my","မြန်မာ"],["vi","Tiếng Việt"],["id","Indonesia"],["ms","Melayu"],
+  ["fil","Filipino"],["jv","Basa Jawa"],["su","Basa Sunda"],
+  ["zh-Hans","中文（简体）"],["zh-Hant","中文（繁體）"],["ja","日本語"],["ko","한국어"],
+  ["sw","Kiswahili"],["am","አማርኛ"],["ha","Hausa"],["ak","Akan"],
+  ["rw","Kinyarwanda"],["zu","isiZulu"],["af","Afrikaans"],
+  ["is","Íslenska"],["ca","Català"],["eu","Euskara"],["gl","Galego"],["sd","سنڌي"]
+];
+const LANG_NAME = Object.fromEntries(LANGS);
+
+/* ────────────────────────────── Стан і сховище ── */
+const $ = id => document.getElementById(id);
+const store = {
+  get(k, d) { try { return localStorage.getItem(k) ?? d; } catch { return this._m?.[k] ?? d; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch { (this._m ||= {})[k] = v; } }
+};
+
+const app = {
+  running: false,
+  stopping: false,
+  audioCtx: null,
+  micStream: null,
+  workletNode: null,
+  streams: { L: null, R: null },
+  wakeLock: null,
+  feedCap: 120
+};
+
+/* ────────────────────────────── UI init ── */
+function fillSelect(sel, val) {
+  sel.innerHTML = LANGS.map(([c, n]) => `<option value="${c}">${n}</option>`).join("");
+  sel.value = val;
+}
+fillSelect($("langL"), store.get("mist.langL", "uk"));
+fillSelect($("langR"), store.get("mist.langR", "ro"));
+$("apiKey").value = store.get("mist.key", "");
+
+$("btnSettings").onclick = () => $("settings").classList.toggle("open");
+if (!$("apiKey").value) $("settings").classList.add("open");
+
+$("btnShowKey").onclick = () => {
+  const i = $("apiKey");
+  i.type = i.type === "password" ? "text" : "password";
+};
+$("apiKey").addEventListener("change", e => store.set("mist.key", e.target.value.trim()));
+$("langL").addEventListener("change", e => { store.set("mist.langL", e.target.value); restartIfRunning(); });
+$("langR").addEventListener("change", e => { store.set("mist.langR", e.target.value); restartIfRunning(); });
+
+$("swap").onclick = () => {
+  const l = $("langL").value, r = $("langR").value;
+  $("langL").value = r; $("langR").value = l;
+  store.set("mist.langL", r); store.set("mist.langR", l);
+  restartIfRunning();
+};
+
+function setStatus(text, isError = false) {
+  const s = $("status");
+  s.textContent = text;
+  s.classList.toggle("error", isError);
+}
+function setEar(side, state, cls) {
+  $("state" + side).textContent = state;
+  const d = $("dot" + side);
+  d.className = "dot" + (cls ? " " + cls : "");
+}
+function addMsg(side, who, text) {
+  const feed = $("feed");
+  const el = document.createElement("div");
+  el.className = "msg " + side;
+  if (side !== "sys") {
+    const w = document.createElement("span");
+    w.className = "who"; w.textContent = who;
+    el.appendChild(w);
+  }
+  el.appendChild(document.createTextNode(text));
+  feed.appendChild(el);
+  while (feed.children.length > app.feedCap) feed.removeChild(feed.firstChild);
+  feed.scrollTop = feed.scrollHeight;
+  return el;
+}
+
+/* ────────────────────────────── Аудіо: base64 утиліти ── */
+function abToB64(buf) {
+  const bytes = new Uint8Array(buf);
+  let bin = "";
+  const CH = 0x8000;
+  for (let i = 0; i < bytes.length; i += CH)
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CH));
+  return btoa(bin);
+}
+function b64ToF32(b64) { // 16-bit LE PCM → Float32
+  const bin = atob(b64);
+  const n = bin.length >> 1;
+  const out = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    let v = bin.charCodeAt(2 * i) | (bin.charCodeAt(2 * i + 1) << 8);
+    if (v >= 0x8000) v -= 0x10000;
+    out[i] = v / 32768;
+  }
+  return out;
+}
+
+/* ────────────────────────────── AudioWorklet: мікрофон → PCM16 @16kHz ── */
+const WORKLET_SRC = `
+class PCMCapture extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.step = sampleRate / 16000;
+    this.readPos = 0;
+    this.tail = new Float32Array(0);
+    this.out = new Int16Array(1600); // 100 ms @ 16 kHz
+    this.outIdx = 0;
+    this.sq = 0;
+  }
+  process(inputs) {
+    const input = inputs[0] && inputs[0][0];
+    if (!input) return true;
+    const data = new Float32Array(this.tail.length + input.length);
+    data.set(this.tail); data.set(input, this.tail.length);
+    let pos = this.readPos;
+    while (pos + 1 < data.length) {
+      const i = pos | 0, f = pos - i;
+      let s = data[i] * (1 - f) + data[i + 1] * f;
+      if (s > 1) s = 1; else if (s < -1) s = -1;
+      this.out[this.outIdx++] = s < 0 ? s * 32768 : s * 32767;
+      this.sq += s * s;
+      if (this.outIdx === 1600) {
+        this.port.postMessage(
+          { pcm: this.out.buffer, level: Math.sqrt(this.sq / 1600) },
+          [this.out.buffer]
+        );
+        this.out = new Int16Array(1600);
+        this.outIdx = 0; this.sq = 0;
+      }
+      pos += this.step;
+    }
+    const keep = pos | 0;
+    this.tail = data.slice(keep);
+    this.readPos = pos - keep;
+    return true;
+  }
+}
+registerProcessor("pcm-capture", PCMCapture);
+`;
+
+/* ────────────────────────────── Один стрім перекладу ── */
+class TranslateStream {
+  /**
+   * side: "L" | "R" — у яке вухо грає вихід
+   * target: BCP-47 цільової мови (echoTargetLanguage:false ⇒
+   *         усе, що вже сказано цією мовою, ігнорується)
+   */
+  constructor({ side, target, apiKey, audioCtx }) {
+    this.side = side;
+    this.target = target;
+    this.apiKey = apiKey;
+    this.ctx = audioCtx;
+    this.ws = null;
+    this.ready = false;
+    this.closedByUs = false;
+    this.playCursor = 0;
+    this.curMsgEl = null;
+    this.curText = "";
+    this.speakTimer = null;
+
+    // Вихід у свій канал
+    this.gain = this.ctx.createGain();
+    this.gain.gain.value = 1;
+    if (typeof StereoPannerNode !== "undefined" && this.ctx.createStereoPanner) {
+      this.pan = this.ctx.createStereoPanner();
+      this.pan.pan.value = side === "L" ? -1 : 1;
+      this.gain.connect(this.pan).connect(this.ctx.destination);
+    } else {
+      // Фолбек: жорсткий роутинг через merger
+      const merger = this.ctx.createChannelMerger(2);
+      this.gain.connect(merger, 0, side === "L" ? 0 : 1);
+      merger.connect(this.ctx.destination);
+    }
+  }
+
+  connect() {
+    setEar(this.side, "з’єднання…", "");
+    const url = "wss://generativelanguage.googleapis.com/ws/" +
+      "google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent" +
+      "?key=" + encodeURIComponent(this.apiKey);
+    this.ws = new WebSocket(url);
+
+    this.ws.onopen = () => {
+      this.ws.send(JSON.stringify({
+        setup: {
+          model: "models/gemini-3.5-live-translate-preview",
+          generationConfig: {
+            responseModalities: ["AUDIO"],
+            inputAudioTranscription: {},
+            outputAudioTranscription: {},
+            translationConfig: {
+              targetLanguageCode: this.target,
+              echoTargetLanguage: false
+            }
+          }
+        }
+      }));
+    };
+
+    this.ws.onmessage = async ev => {
+      let raw = ev.data;
+      if (raw instanceof Blob) raw = await raw.text();
+      let msg;
+      try { msg = JSON.parse(raw); } catch { return; }
+      this.handle(msg);
+    };
+
+    this.ws.onerror = () => { /* деталі прийдуть у onclose */ };
+
+    this.ws.onclose = ev => {
+      this.ready = false;
+      if (this.closedByUs || app.stopping) { setEar(this.side, "вимкнено", ""); return; }
+      if (ev.code === 1007 || ev.code === 1008 || /API key/i.test(ev.reason || "")) {
+        setEar(this.side, "помилка ключа", "err");
+        setStatus("З’єднання відхилено — перевірте API-ключ у налаштуваннях", true);
+        stopSession();
+        return;
+      }
+      setEar(this.side, "перепідключення…", "err");
+      setTimeout(() => { if (app.running && !this.closedByUs) this.connect(); }, 900);
+    };
+  }
+
+  handle(msg) {
+    if (msg.setupComplete) {
+      this.ready = true;
+      this.playCursor = 0;
+      setEar(this.side, "слухає · " + (LANG_NAME[this.target] || this.target), "on");
+      return;
+    }
+    if (msg.goAway) return; // сесія завершується — onclose перепідключить
+
+    const c = msg.serverContent;
+    if (!c) return;
+
+    if (c.outputTranscription && c.outputTranscription.text) {
+      this.curText += c.outputTranscription.text;
+      if (!this.curMsgEl)
+        this.curMsgEl = addMsg(this.side, "→ " + (LANG_NAME[this.target] || this.target), "");
+      this.curMsgEl.lastChild.textContent = this.curText;
+      $("feed").scrollTop = $("feed").scrollHeight;
+    }
+
+    if (c.modelTurn && c.modelTurn.parts) {
+      for (const p of c.modelTurn.parts) {
+        if (p.inlineData && p.inlineData.data) this.playChunk(p.inlineData.data);
+      }
+    }
+
+    if (c.turnComplete) {
+      this.curMsgEl = null;
+      this.curText = "";
+    }
+  }
+
+  playChunk(b64) {
+    const f32 = b64ToF32(b64);
+    if (!f32.length) return;
+    const buf = this.ctx.createBuffer(1, f32.length, 24000);
+    buf.copyToChannel(f32, 0);
+    const src = this.ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(this.gain);
+    const now = this.ctx.currentTime;
+    const startAt = Math.max(now + 0.06, this.playCursor);
+    src.start(startAt);
+    this.playCursor = startAt + buf.duration;
+
+    // Індикатор «говорить у це вухо»
+    setEar(this.side, "перекладає → " + (LANG_NAME[this.target] || this.target), "live");
+    clearTimeout(this.speakTimer);
+    const holdMs = Math.max(300, (this.playCursor - now) * 1000);
+    this.speakTimer = setTimeout(() => {
+      if (this.ready) setEar(this.side, "слухає · " + (LANG_NAME[this.target] || this.target), "on");
+    }, holdMs);
+  }
+
+  sendAudio(b64) {
+    if (this.ready && this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({
+        realtimeInput: { audio: { data: b64, mimeType: "audio/pcm;rate=16000" } }
+      }));
+    }
+  }
+
+  close() {
+    this.closedByUs = true;
+    clearTimeout(this.speakTimer);
+    try { this.ws && this.ws.close(); } catch {}
+    setEar(this.side, "вимкнено", "");
+  }
+}
+
+/* ────────────────────────────── Сесія ── */
+async function startSession() {
+  const key = $("apiKey").value.trim();
+  if (!key) {
+    $("settings").classList.add("open");
+    setStatus("Спершу вставте Gemini API-ключ", true);
+    return;
+  }
+  const langL = $("langL").value, langR = $("langR").value;
+  if (langL === langR) {
+    setStatus("Оберіть дві різні мови", true);
+    return;
+  }
+
+  app.stopping = false;
+  $("btnMain").disabled = true;
+  setStatus("Доступ до мікрофона…");
+
+  try {
+    app.micStream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      video: false
+    });
+  } catch (e) {
+    setStatus("Немає доступу до мікрофона — дозвольте його у браузері", true);
+    $("btnMain").disabled = false;
+    return;
+  }
+
+  const AC = window.AudioContext || window.webkitAudioContext;
+  app.audioCtx = new AC();
+  await app.audioCtx.resume();
+
+  const blobUrl = URL.createObjectURL(new Blob([WORKLET_SRC], { type: "application/javascript" }));
+  try {
+    await app.audioCtx.audioWorklet.addModule(blobUrl);
+  } catch (e) {
+    setStatus("Цей браузер не підтримує AudioWorklet — спробуйте свіжий Chrome/Safari", true);
+    cleanupAudio();
+    $("btnMain").disabled = false;
+    return;
+  } finally {
+    URL.revokeObjectURL(blobUrl);
+  }
+
+  const micSrc = app.audioCtx.createMediaStreamSource(app.micStream);
+  app.workletNode = new AudioWorkletNode(app.audioCtx, "pcm-capture", {
+    numberOfInputs: 1, numberOfOutputs: 0, channelCount: 1
+  });
+  micSrc.connect(app.workletNode);
+
+  // Два дзеркальні стріми: у ліве вухо — переклад на мову L, у праве — на мову R
+  app.streams.L = new TranslateStream({ side: "L", target: langL, apiKey: key, audioCtx: app.audioCtx });
+  app.streams.R = new TranslateStream({ side: "R", target: langR, apiKey: key, audioCtx: app.audioCtx });
+  app.streams.L.connect();
+  app.streams.R.connect();
+
+  app.workletNode.port.onmessage = ev => {
+    const { pcm, level } = ev.data;
+    $("micLevel").style.width = Math.min(100, level * 260) + "%";
+    const b64 = abToB64(pcm);
+    app.streams.L.sendAudio(b64);
+    app.streams.R.sendAudio(b64);
+  };
+
+  // Не давати екрану заснути
+  try { app.wakeLock = await navigator.wakeLock?.request("screen"); } catch {}
+
+  app.running = true;
+  $("btnMain").disabled = false;
+  $("btnMain").textContent = "Стоп";
+  $("btnMain").classList.add("running");
+  setStatus("Говоріть по черзі. Переклад прийде у відповідний навушник.");
+  addMsg("sys", "", `Сесія: ${LANG_NAME[langL]} ↔ ${LANG_NAME[langR]}`);
+}
+
+function cleanupAudio() {
+  try { app.workletNode && app.workletNode.disconnect(); } catch {}
+  app.workletNode = null;
+  if (app.micStream) { app.micStream.getTracks().forEach(t => t.stop()); app.micStream = null; }
+  if (app.audioCtx) { app.audioCtx.close().catch(() => {}); app.audioCtx = null; }
+}
+
+function stopSession() {
+  app.stopping = true;
+  app.running = false;
+  for (const s of Object.values(app.streams)) s && s.close();
+  app.streams = { L: null, R: null };
+  cleanupAudio();
+  try { app.wakeLock && app.wakeLock.release(); } catch {}
+  app.wakeLock = null;
+  $("micLevel").style.width = "0%";
+  $("btnMain").textContent = "Почати";
+  $("btnMain").classList.remove("running");
+  if (!$("status").classList.contains("error"))
+    setStatus("Зупинено. Натисніть «Почати», щоб продовжити.");
+}
+
+function restartIfRunning() {
+  if (!app.running) return;
+  stopSession();
+  setTimeout(startSession, 300);
+}
+
+$("btnMain").onclick = () => (app.running ? stopSession() : startSession());
+
+// Повернення wake lock після згортання
+document.addEventListener("visibilitychange", async () => {
+  if (document.visibilityState === "visible" && app.running && !app.wakeLock) {
+    try { app.wakeLock = await navigator.wakeLock?.request("screen"); } catch {}
+  }
+});
+</script>
+</body>
+</html>
