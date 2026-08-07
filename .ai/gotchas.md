@@ -1,4 +1,9 @@
 # Gotchas
 
 - Local preview: the Chrome extension refuses `file://`. Serve with `python3 -m http.server <port>` from the repo root and open `http://localhost:<port>/index.html`.
+- 2026-08-06: a GitHub Pages outage left the queued build stuck at `status: building, duration: 0` with `updated_at` frozen, and it did NOT resume when the service recovered. Zombie builds need a manual kick: `gh api -X POST repos/gwythyr/mist-live-translate/pages/builds`. A healthy build finishes in ~35-45s.
 - `resize_window` from the Chrome extension does not change `window.innerWidth` — responsive breakpoints cannot be verified that way; reason about them or use real devices.
+- 2026-08-07: headless Chrome also cannot do it — `--window-size=390,844` yields `innerWidth: 500` (clamped to a ~500px minimum). Working method: a harness page with `<iframe width=390 height=844>` per state, screenshotted in one big window. The iframe gets a real CSS viewport, so `100dvh` and media queries resolve correctly.
+- 2026-08-07: UI regressions are verifiable without a browser extension — inject state via `<script>` appended before `</body>` into scratchpad copies of `index.html`, then assert in-page (band `getBoundingClientRect()` pairs must not overlap, `scrollHeight <= innerHeight`, `el.scrollWidth <= el.clientWidth`) and exfiltrate the report through `document.title` + `--dump-dom`. Always run the same audit against `git show HEAD:index.html` first — if it does not fail there, the audit is vacuous.
+- Elements inside a `display:none` ancestor report a 0×0 rect; use `el.offsetParent === null` to skip them, not `getComputedStyle(el).display`.
+- 2026-08-07: у харнесі з iframe'ами давайте їм `flex: none` — обгортка з `display:flex` стискає iframe нижче його атрибута `width`, і ВСІ виміри тихо брешуть (стрічка «зникала» на 320px, хоча ізольований прогін давав норму). Завжди перевіряйте `iframe.contentWindow.innerWidth === +iframe.width` перед тим, як вірити числам.

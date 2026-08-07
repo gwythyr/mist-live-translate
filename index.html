@@ -5,288 +5,750 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="theme-color" content="#0f111a">
+<meta name="theme-color" content="#070912">
 <title>Міст — живий переклад на двох</title>
 <style>
-  :root {
-    --ink:    #0f111a;
-    --ink-2:  #191d2b;
-    --ink-3:  #2a3044;
-    --ink-4:  #3a4159;
-    --paper:  #f4f2ec;
-    --muted:  #aab0c6;          /* контраст ≥ 7:1 на --ink */
-    --gold:   #f0b755;          /* канал A — ліве вухо */
-    --sky:    #7cc4ea;          /* канал B — праве вухо */
-    --danger: #ff6b5e;
-    --ok:     #86d06a;
-    --radius: 16px;
-    --seam: linear-gradient(180deg, var(--gold), var(--sky));
+/* ═══════════════════════════════════════════════════════════════════
+   МІСТ — жива розмова двома мовами
 
-    --fs: 20px;                 /* розмір тексту стрічки, керується A− / A+ */
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
-  html { -webkit-text-size-adjust: 100%; }
-  html, body { height: 100%; }
-  body {
-    background: var(--ink);
-    color: var(--paper);
-    font: 17px/1.5 -apple-system, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
-    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
-    display: flex; flex-direction: column;
-    max-width: 620px; margin: 0 auto;
-    min-height: 100dvh;
-    overflow: hidden;
-  }
+   Макет: жорстка вертикальна колонка на висоту екрана.
+   Правило, яке робить налізання неможливим:
+     • кожна смуга (шапка, пара мов, підказка, керування) — flex:none,
+       тобто НІКОЛИ не стискається і не деформує свій вміст;
+     • увесь надлишок/дефіцит простору поглинає рівно один елемент —
+       #feed (min-height:0 + власний скрол);
+     • #settings живе поза потоком (position:fixed) і за визначенням
+       не може посунути нічого;
+     • кожна горизонтальна колонка — minmax(0,1fr)/min-width:0, тому
+       довгий текст обрізається трикрапкою замість розпирання.
 
-  /* ── Шапка ── */
-  header {
-    display: flex; align-items: center; gap: 12px;
-    padding: 12px 14px;
-  }
-  .brand { display: flex; align-items: center; gap: 11px; min-width: 0; flex: 1; }
-  .brand .seam { width: 5px; height: 40px; border-radius: 3px; background: var(--seam); flex: none; }
-  .brand h1 { font-size: 26px; font-weight: 800; letter-spacing: .01em; line-height: 1.1; }
-  .brand p {
-    font-size: 13px; color: var(--muted); margin-top: 2px;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
+   Два стани, а не один перевантажений екран:
+     body           — НАЛАШТУВАННЯ: пара мов розлого + інструкція
+     body.running   — ЖИВИЙ ЕФІР:   стрічка на весь екран, пара мов
+                                     згорнута у статусний рядок
+   Обидва стани мають однакову висоту смуг — при старті нічого не стрибає.
 
-  .iconbtn {
-    background: var(--ink-2); border: 1px solid var(--ink-3); color: var(--paper);
-    min-width: 46px; height: 46px; border-radius: 13px; font-size: 20px;
-    display: grid; place-items: center; cursor: pointer; flex: none;
-  }
-  .iconbtn:active { background: var(--ink-3); }
+   Візуальна мова: темне скло над живим полем світла.
+     • .aurora — три м’які радіальні плями (золото зліва, небо справа,
+       ірис посередині) за z-index:-1. Рухаються ЛИШЕ через transform,
+       тож анімація йде на композиторі. Жодного filter:blur() у
+       анімованому шляху — градієнти й так м’які.
+     • Поверхні (#ears, #guide, .sheet) — напівпрозоре скло з
+       градієнтною волосинкою замість пласкої рамки 1px.
+     • #viz — смуги, що розходяться від шва до обох вух у такт голосу.
+       Це той самий міст, тільки живий.
+   ═══════════════════════════════════════════════════════════════════ */
 
-  /* сегментований контрол розміру тексту */
-  #fsCtl {
-    display: flex; height: 46px; flex: none;
-    background: var(--ink-2); border: 1px solid var(--ink-3); border-radius: 13px; overflow: hidden;
-  }
-  #fsCtl button {
-    background: none; border: none; color: var(--paper); cursor: pointer;
-    width: 44px; font-weight: 700; font-family: inherit;
-  }
-  #fsCtl button:first-child { font-size: 15px; border-right: 1px solid var(--ink-3); }
-  #fsCtl button:last-child  { font-size: 21px; }
-  #fsCtl button:disabled { color: var(--ink-4); cursor: default; }
-  #fsCtl button:not(:disabled):active { background: var(--ink-3); }
+:root {
+  --ink:    #070912;   /* тло */
+  --ink-2:  #12172a;   /* непрозора поверхня (список <option>) */
+  --line:   rgba(255,255,255,.10);   /* волосинка */
+  --line-2: rgba(255,255,255,.06);
+  --ink-4:  #3d4463;   /* неактивне */
+  --paper:  #f5f3ee;   /* основний текст */
+  --muted:  #aab1c9;   /* другорядний текст, контраст ≥ 7:1 на --ink */
 
-  /* ── Налаштування ── */
-  #settings {
-    margin: 0 14px 12px; padding: 16px;
-    background: var(--ink-2); border: 1px solid var(--ink-3); border-radius: var(--radius);
-    display: none; flex-direction: column; gap: 12px;
-  }
-  #settings.open { display: flex; }
-  label.field {
-    display: flex; flex-direction: column; gap: 7px;
-    font-size: 14px; font-weight: 600; color: var(--muted);
-  }
-  input[type="password"], input[type="text"], select {
-    background: var(--ink); border: 1px solid var(--ink-3); color: var(--paper);
-    border-radius: 12px; padding: 14px; font-size: 17px; font-family: inherit; width: 100%;
-    appearance: none; -webkit-appearance: none;
-  }
-  input:focus, select:focus { outline: 2px solid var(--sky); outline-offset: -1px; border-color: transparent; }
-  .keyrow { display: flex; gap: 9px; }
-  .keyrow button {
-    background: var(--ink-3); border: none; color: var(--paper); border-radius: 12px;
-    min-width: 54px; font-size: 19px; cursor: pointer;
-  }
-  .hint { font-size: 14px; line-height: 1.5; color: var(--muted); }
-  .hint a { color: var(--sky); }
+  --gold:   #ffc267;   /* канал A — ліве вухо */
+  --sky:    #6fc9ff;   /* канал B — праве вухо */
+  --iris:   #a99cff;   /* середина шва */
+  --danger: #ff6f66;
+  --ok:     #8ede72;
 
-  /* ── Мовні панелі ── */
-  #ears {
-    display: grid; grid-template-columns: 1fr 58px 1fr;
-    margin: 0 14px; border-radius: var(--radius); overflow: hidden;
-    border: 1px solid var(--ink-3);
-  }
-  .ear {
-    background: var(--ink-2); padding: 13px 14px 14px;
-    display: flex; flex-direction: column; gap: 9px;
-    transition: background .2s;
-  }
-  .ear .tag {
-    font-size: 13px; letter-spacing: .06em; text-transform: uppercase; font-weight: 800;
-    white-space: nowrap;
-  }
-  .ear[data-side="R"] { text-align: right; }
-  .ear[data-side="L"] .tag { color: var(--gold); }
-  .ear[data-side="R"] .tag { color: var(--sky); }
-  .ear select { font-weight: 700; font-size: 17px; padding: 13px 12px; }
-  .ear[data-side="R"] select { text-align: right; text-align-last: right; }
-  .ear[data-side="L"][data-state="live"] { background: rgba(240,183,85,.14); }
-  .ear[data-side="R"][data-state="live"] { background: rgba(124,196,234,.14); }
+  --gold-wash: rgba(255,194,103,.13);
+  --sky-wash:  rgba(111,201,255,.13);
+  --seam: linear-gradient(180deg, var(--gold), var(--iris) 52%, var(--sky));
+  --span: linear-gradient(100deg, var(--gold), var(--iris) 52%, var(--sky));
 
-  .earstate {
-    display: flex; align-items: center; gap: 8px;
-    font-size: 14px; font-weight: 600; color: var(--muted); min-height: 22px;
-  }
-  .ear[data-side="R"] .earstate { flex-direction: row-reverse; }
-  .dot { width: 11px; height: 11px; border-radius: 50%; background: var(--ink-4); flex: none; transition: background .15s; }
-  .ear[data-side="L"] .dot.live { background: var(--gold); box-shadow: 0 0 12px var(--gold); }
-  .ear[data-side="R"] .dot.live { background: var(--sky);  box-shadow: 0 0 12px var(--sky); }
-  .dot.err { background: var(--danger); }
-  .dot.on  { background: var(--ok); }
-  .ear[data-state="live"] .earstate { color: var(--paper); }
+  /* Скло навмисно не прозоре наскрізь: підкладка рятує вигляд там, де
+     backdrop-filter недоступний, а менший радіус блюру дешевший —
+     #ears висить над рухомою aurora і переблюрюється щокадру. */
+  --glass:   linear-gradient(165deg, rgba(255,255,255,.085), rgba(22,27,45,.5) 46%, rgba(255,255,255,.05));
+  --glass-b: blur(13px) saturate(145%);
 
-  /* центральна колонка-шов з кнопкою обміну */
-  .seamcol { position: relative; background: var(--ink-2); display: grid; place-items: center; }
-  .seamcol::before {
-    content: ""; position: absolute; top: 0; bottom: 0; left: 50%; width: 2px;
-    transform: translateX(-50%); background: var(--seam); opacity: .75;
-  }
-  #swap {
-    position: relative; z-index: 2; width: 46px; height: 46px; border-radius: 50%;
-    background: var(--ink); border: 1px solid var(--ink-3); color: var(--paper);
-    font-size: 19px; cursor: pointer; display: grid; place-items: center;
-  }
-  #swap:active { background: var(--ink-3); }
+  --r-lg: 20px;
+  --r-md: 14px;
+  --pad:  14px;
+  --bar:  62px;        /* висота шапки */
+  --tap:  44px;        /* мінімальна ціль дотику */
 
-  /* ── Підказка про навушники ── */
-  #guide {
-    margin: 12px 14px 0; padding: 14px 16px; border-radius: var(--radius);
-    background: var(--ink-2); border: 1px solid var(--ink-3);
-    font-size: 15px; line-height: 1.55; color: var(--muted);
-  }
-  #guide b.l { color: var(--gold); } #guide b.r { color: var(--sky); }
-  body.running #guide { display: none; }
+  --fs: 20px;          /* розмір тексту стрічки, керується A− / A+ */
+}
 
-  /* ── Стрічка перекладів ── */
-  #feed {
-    flex: 1; min-height: 0; overflow-y: auto;
-    margin: 12px 0 0; padding: 4px 14px 16px;
-    display: flex; flex-direction: column; gap: 10px;
-    -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
-  }
-  #feed:empty::before {
-    content: "Тут з’являтиметься текст перекладу — обидва напрямки";
-    color: var(--muted); font-size: 15px; text-align: center; margin: auto; padding: 0 20px;
-  }
-  .msg {
-    max-width: 90%; padding: 11px 15px; border-radius: 16px;
-    font-size: var(--fs); line-height: 1.45;
-    background: var(--ink-2); border: 1px solid var(--ink-3);
-    word-break: break-word;
-  }
-  .msg .who {
-    display: block; font-size: 13px; letter-spacing: .06em; text-transform: uppercase;
-    font-weight: 800; margin-bottom: 4px;
-  }
-  .msg.L { align-self: flex-start; border-left: 4px solid var(--gold); border-top-left-radius: 6px; }
-  .msg.L .who { color: var(--gold); }
-  .msg.R { align-self: flex-end; border-right: 4px solid var(--sky); border-top-right-radius: 6px; text-align: right; }
-  .msg.R .who { color: var(--sky); }
-  .msg.sys {
-    align-self: center; max-width: 100%; text-align: center;
-    font-size: 14px; font-weight: 600; color: var(--muted);
-    background: none; border: none; padding: 4px 0;
-  }
+*, *::before, *::after {
+  box-sizing: border-box; margin: 0; padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+/* Тло живе на <html>, щоб .aurora (z-index:-1) не сховалася за фоном body. */
+html { background: var(--ink); -webkit-text-size-adjust: 100%; }
 
-  /* ── Нижня панель керування ── */
-  #controls {
-    flex: none; padding: 12px 14px 16px;
-    background: var(--ink); border-top: 1px solid var(--ink-3);
-    display: flex; flex-direction: column; gap: 11px;
-  }
-  #micBar { height: 7px; border-radius: 4px; background: var(--ink-2); overflow: hidden; }
-  #micLevel { height: 100%; width: 0%; background: var(--seam); transition: width .08s linear; }
-  #btnMain {
-    width: 100%; height: 64px; border-radius: 18px;
-    border: none; cursor: pointer; font-family: inherit; font-weight: 800; font-size: 20px;
-    letter-spacing: .01em; color: var(--ink); background: var(--paper);
-    transition: transform .1s;
-  }
-  #btnMain:active { transform: scale(.985); }
-  #btnMain:disabled { opacity: .55; }
-  #btnMain.running {
-    background: var(--danger); color: #fff;
-    animation: pulse 1.9s ease-in-out infinite;
-  }
-  @keyframes pulse {
-    0%,100% { box-shadow: 0 0 0 0 rgba(255,107,94,.5); }
-    70%     { box-shadow: 0 0 0 16px rgba(255,107,94,0); }
-  }
-  #status {
-    font-size: 15px; line-height: 1.4; color: var(--muted); text-align: center; min-height: 21px;
-  }
-  #status.error { color: var(--danger); font-weight: 600; }
+body {
+  background: transparent;
+  color: var(--paper);
+  font: 17px/1.5 -apple-system, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
 
-  @media (max-width: 390px) {
-    #ears { grid-template-columns: 1fr 52px 1fr; }
-    .ear { padding: 12px 10px; }
-    .ear .tag { font-size: 12px; letter-spacing: .03em; }
-    .ear select { font-size: 16px; padding: 12px 9px; }
-    .earstate { font-size: 13px; }
-    #swap { width: 42px; height: 42px; }
-  }
-  @media (max-width: 360px) {
-    .brand p { display: none; }
-    .brand h1 { font-size: 23px; }
-    #fsCtl button { width: 38px; }
-    header { gap: 8px; }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    #btnMain.running { animation: none; }
-    * { transition: none !important; }
-  }
+  /* Жорстка колонка на висоту екрана. Нічого не виходить за межі. */
+  height: 100vh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+
+  max-width: 640px; margin: 0 auto;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+@media (min-width: 680px) {
+  body { border-inline: 1px solid var(--line-2); }
+}
+
+/* ──────────────────────────────────────────── Поле світла ── */
+/* Три радіальні плями за вмістом. Анімуються лише transform-ом.
+   --energy (0…1) виставляє JS із рівня мікрофона: поле дихає в такт
+   голосу. data-live на <body> підсвічує те вухо, у яке зараз ллється
+   переклад.                                                        */
+/* Прив’язана до колонки застосунку, а не до вьюпорта: на десктопі
+   світло тримається біля вмісту замість того, щоб розповзтися по
+   краях екрана і лишити колонку в темряві. */
+.aurora {
+  position: fixed; top: 0; bottom: 0; left: 0; right: 0;
+  max-width: 720px; margin-inline: auto;
+  z-index: -1; pointer-events: none;
+  --energy: 0;
+  opacity: calc(.8 + var(--energy) * .2);
+  transition: opacity .18s linear;
+}
+/* Ядро плями прив’язане до відсотка екрана, а розмір — окремо (з
+   верхньою межею, щоб на десктопі пляма не розтягнулась у молоко).
+   margin:-s/2 центрує коло на точці прив’язки. */
+.aurora b {
+  --s: min(132vw, 760px);
+  position: absolute; display: block;
+  width: var(--s); height: var(--s);
+  margin-left: calc(var(--s) / -2); margin-top: calc(var(--s) / -2);
+  border-radius: 50%;
+  transition: opacity .5s ease;
+}
+.aurora .a {
+  left: 11%; top: 13%;
+  background: radial-gradient(circle at 50% 50%, rgba(255,175,68,.5), rgba(255,175,68,.18) 38%, transparent 66%);
+  animation: drift-a 27s ease-in-out infinite alternate;
+}
+.aurora .b {
+  left: 90%; top: 31%;
+  background: radial-gradient(circle at 50% 50%, rgba(56,164,255,.5), rgba(56,164,255,.18) 38%, transparent 66%);
+  animation: drift-b 31s ease-in-out infinite alternate;
+}
+.aurora .c {
+  --s: min(155vw, 900px);
+  left: 45%; top: 93%;
+  background: radial-gradient(circle at 50% 50%, rgba(138,116,255,.44), rgba(138,116,255,.14) 40%, transparent 68%);
+  animation: drift-c 37s ease-in-out infinite alternate;
+}
+@keyframes drift-a { from { transform: translate3d(-4vw,-3vw,0) scale(.95); }
+                     to   { transform: translate3d(7vw,6vw,0)   scale(1.12); } }
+@keyframes drift-b { from { transform: translate3d(5vw,-4vw,0)  scale(1.1); }
+                     to   { transform: translate3d(-6vw,7vw,0)  scale(.93); } }
+@keyframes drift-c { from { transform: translate3d(-7vw,3vw,0)  scale(1);   }
+                     to   { transform: translate3d(6vw,-4vw,0)  scale(1.15); } }
+
+/* Той бік, у який зараз говорить переклад, розгоряється */
+body[data-live="L"] .aurora .a,
+body[data-live="R"] .aurora .b { opacity: 1.45; }
+body[data-live="L"] .aurora .b,
+body[data-live="R"] .aurora .a { opacity: .45; }
+
+/* Плівкове зерно поверх усього: прибирає бандинг градієнтів
+   і додає матеріальності. Без mix-blend-mode — надто дорого. */
+.grain {
+  position: fixed; inset: 0; z-index: 40; pointer-events: none;
+  opacity: .05;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 140px 140px;
+}
+
+/* ──────────────────────────────────────────── Шапка ── */
+header {
+  flex: none;
+  height: var(--bar);
+  display: flex; align-items: center; gap: 10px;
+  padding: 0 var(--pad);
+  position: relative; z-index: 30;   /* над оверлеєм налаштувань */
+}
+/* Знак застосунку — власне міст: прогін між золотою і небесною опорою.
+   У ефірі прогоном біжить світло. */
+.mark { width: 38px; height: 23px; flex: none; overflow: visible; }
+.mark .span  { stroke: url(#markGrad); stroke-width: 3.2; fill: none; stroke-linecap: round; }
+.mark .halo  { stroke: url(#markGrad); stroke-width: 9; fill: none; stroke-linecap: round; opacity: .35; filter: blur(4px); }
+.mark .light {
+  stroke: #fff; stroke-width: 3.2; fill: none; stroke-linecap: round;
+  stroke-dasharray: 12 170; stroke-dashoffset: 0; opacity: 0;
+}
+body.running .mark .light { opacity: .95; animation: markrun 2.6s linear infinite; }
+@keyframes markrun { to { stroke-dashoffset: -182; } }
+
+header h1 {
+  font-size: 24px; font-weight: 800; letter-spacing: -.015em;
+  flex: 1; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.iconbtn {
+  flex: none;
+  width: var(--tap); height: var(--tap); border-radius: var(--r-md);
+  background: var(--glass); border: 1px solid var(--line); color: var(--paper);
+  -webkit-backdrop-filter: var(--glass-b); backdrop-filter: var(--glass-b);
+  font-size: 19px; display: grid; place-items: center; cursor: pointer;
+  transition: background .15s, transform .1s;
+}
+.iconbtn:active { transform: scale(.94); background: rgba(255,255,255,.14); }
+
+/* Сегментований контрол розміру тексту стрічки */
+#fsCtl {
+  flex: none;
+  display: flex; height: var(--tap);
+  background: var(--glass); border: 1px solid var(--line);
+  -webkit-backdrop-filter: var(--glass-b); backdrop-filter: var(--glass-b);
+  border-radius: var(--r-md); overflow: hidden;
+}
+#fsCtl button {
+  background: none; border: none; color: var(--paper);
+  font-family: inherit; font-weight: 700; cursor: pointer;
+  width: 42px;
+}
+#fsCtl button:first-child { font-size: 14px; border-right: 1px solid var(--line); }
+#fsCtl button:last-child  { font-size: 20px; }
+#fsCtl button:disabled { color: var(--ink-4); cursor: default; }
+#fsCtl button:not(:disabled):active { background: rgba(255,255,255,.14); }
+
+/* ──────────────────────────────────────────── Пара мов ── */
+/* Одна структура у двох густинах:
+   спокій → «◀ Ліве вухо» + селект;  ефір → селект + індикатор стану.
+   Обидві — рівно два рядки, тож висота смуги стала.               */
+#ears {
+  flex: none;
+  position: relative;
+  margin: 0 var(--pad);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 46px minmax(0, 1fr);
+  background: var(--glass);
+  -webkit-backdrop-filter: var(--glass-b); backdrop-filter: var(--glass-b);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  box-shadow: 0 18px 40px -26px rgba(0,0,0,.9);
+}
+/* Градієнтна волосинка замість пласкої рамки: маска лишає видимим
+   лише 1px по периметру. */
+#ears::after {
+  content: ""; position: absolute; inset: 0; z-index: 3;
+  border-radius: inherit; padding: 1px; pointer-events: none;
+  background: linear-gradient(150deg, rgba(255,194,103,.55), rgba(255,255,255,.07) 45%, rgba(111,201,255,.55));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+          mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+}
+.ear {
+  position: relative;
+  min-width: 0;                       /* дозволяє селекту стискатися */
+  padding: 12px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.ear > * { position: relative; z-index: 1; }
+.ear[data-side="R"] { text-align: right; }
+
+/* Підсвітка вуха, що зараз говорить / зламалося — окремий шар,
+   щоб анімувати саму лише opacity. */
+.ear::before {
+  content: ""; position: absolute; inset: 0; z-index: 0;
+  opacity: 0; transition: opacity .3s ease;
+}
+.ear[data-side="L"]::before { background: radial-gradient(130% 120% at 0% 50%, var(--gold-wash), transparent 72%); }
+.ear[data-side="R"]::before { background: radial-gradient(130% 120% at 100% 50%, var(--sky-wash), transparent 72%); }
+.ear[data-state="live"]::before { opacity: 1; animation: breathe 1.9s ease-in-out infinite; }
+.ear[data-state="err"]::before   { opacity: 1; background: radial-gradient(130% 120% at 50% 50%, rgba(255,111,102,.16), transparent 74%); }
+@keyframes breathe { 0%,100% { opacity: .55; } 50% { opacity: 1; } }
+
+.ear .tag {
+  font-size: 13px; font-weight: 800;
+  letter-spacing: .05em; text-transform: uppercase;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ear[data-side="L"] .tag { color: var(--gold); }
+.ear[data-side="R"] .tag { color: var(--sky); }
+.ear .tag i { font-style: normal; }
+
+.earstate {
+  display: none;                      /* показується лише в ефірі */
+  align-items: center; gap: 8px;
+  font-size: 14px; font-weight: 600; color: var(--muted);
+  min-height: 20px;
+  white-space: nowrap; overflow: hidden;
+}
+.ear[data-side="R"] .earstate { flex-direction: row-reverse; }
+/* Довгий стан («перепідключення…») обрізається трикрапкою, а не навпіл.
+   Повний текст помилки все одно дублюється у рядку статусу внизу. */
+.earstate span:not(.dot) { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
+.dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--ink-4); flex: none; transition: background .15s, box-shadow .15s;
+}
+.dot.on  { background: var(--ok); box-shadow: 0 0 10px rgba(142,222,114,.55); }
+.dot.err { background: var(--danger); box-shadow: 0 0 10px rgba(255,111,102,.55); }
+.ear[data-side="L"] .dot.live { background: var(--gold); box-shadow: 0 0 16px var(--gold); }
+.ear[data-side="R"] .dot.live { background: var(--sky);  box-shadow: 0 0 16px var(--sky); }
+
+.ear[data-state="live"] .earstate { color: var(--paper); }
+.ear[data-state="err"]  .earstate { color: var(--danger); }
+
+/* Перемикання густини */
+body.running .ear .tag   { display: none; }
+body.running .earstate   { display: flex; }
+
+/* Центральна колонка-шов з кнопкою обміну.
+   У ефірі швом згори вниз біжить світло — видимий «потік» між мовами. */
+.seamcol { position: relative; display: grid; place-items: center; }
+.seamcol::before {
+  content: ""; position: absolute; top: 0; bottom: 0; left: 50%;
+  width: 2px; transform: translateX(-50%);
+  background-image:
+    linear-gradient(180deg, transparent, rgba(255,255,255,.95) 50%, transparent),
+    var(--seam);
+  background-repeat: no-repeat, no-repeat;
+  background-size: 100% 54px, 100% 100%;
+  background-position: 0 -70px, 0 0;
+  opacity: .75;
+}
+body.running .seamcol::before { animation: seamflow 2.6s linear infinite; opacity: 1; }
+@keyframes seamflow {
+  from { background-position: 0 -70px, 0 0; }
+  to   { background-position: 0 140px, 0 0; }
+}
+#swap {
+  position: relative; z-index: 2;
+  width: var(--tap); height: var(--tap); border-radius: 50%;
+  background: rgba(10,13,24,.9); border: 1px solid var(--line); color: var(--paper);
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  font-size: 18px; display: grid; place-items: center; cursor: pointer;
+  transition: transform .18s cubic-bezier(.34,1.56,.64,1), box-shadow .18s;
+}
+#swap:active {
+  transform: rotate(180deg) scale(.92);
+  box-shadow: 0 0 0 4px rgba(169,156,255,.18);
+}
+
+/* ──────────────────────────────────────────── Поля вводу ── */
+input[type="password"], input[type="text"], select {
+  width: 100%; min-width: 0;
+  background-color: rgba(6,8,16,.6);
+  border: 1px solid var(--line);
+  color: var(--paper);
+  border-radius: 12px; padding: 13px 14px;
+  font-size: 17px; font-family: inherit;
+  appearance: none; -webkit-appearance: none;
+}
+input:focus, select:focus {
+  outline: 2px solid var(--sky); outline-offset: -1px; border-color: transparent;
+}
+
+select {
+  font-weight: 700;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.6 6 6.4 11 1.6' fill='none' stroke='%23aab1c9' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 12px 8px;
+  padding-right: 32px;
+}
+/* Поле селекта напівпрозоре — випадний список мусить мати власне
+   непрозоре тло, інакше на Windows/Linux він читається як каша. */
+select option { background: var(--ink-2); color: var(--paper); }
+/* У картці мов селект — не поле вводу, а сама назва мови: без рамки,
+   з підкресленням у колір каналу. Так назва отримує всю ширину
+   колонки замість того, щоб обрізатися трикрапкою всередині пігулки. */
+.ear select {
+  padding: 8px 22px 9px 0;
+  border: 0; border-bottom: 2px solid var(--line); border-radius: 0;
+  background-color: transparent;
+  background-position: right 2px center;
+  transition: border-bottom-color .25s, text-shadow .25s;
+}
+.ear[data-side="L"] select { border-bottom-color: rgba(255,194,103,.55); }
+.ear[data-side="R"] select {
+  border-bottom-color: rgba(111,201,255,.55);
+  text-align: right; text-align-last: right;
+  background-position: left 2px center;
+  padding-right: 0; padding-left: 22px;
+}
+.ear[data-side="L"][data-state="live"] select { border-bottom-color: var(--gold); text-shadow: 0 0 18px rgba(255,194,103,.55); }
+.ear[data-side="R"][data-state="live"] select { border-bottom-color: var(--sky);  text-shadow: 0 0 18px rgba(111,201,255,.55); }
+.ear select:focus { outline-offset: 2px; }
+
+/* ──────────────────────────────────────────── Підказка ── */
+/* Стоїть безпосередньо над кнопкою «Почати» — інструкція поруч із
+   дією, до якої вона веде. У ефірі зникає повністю. */
+#guide {
+  flex: none;
+  position: relative;
+  margin: 0 var(--pad) 12px;
+  padding: 14px 16px;
+  background: var(--glass);
+  -webkit-backdrop-filter: var(--glass-b); backdrop-filter: var(--glass-b);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-lg);
+  font-size: 15px; line-height: 1.55; color: var(--muted);
+}
+#guide p + p { margin-top: 7px; }
+#guide b.l { color: var(--gold); }
+#guide b.r { color: var(--sky); }
+body.running #guide { display: none; }
+
+/* ──────────────────────────────────────────── Стрічка ── */
+/* Єдиний еластичний елемент макета: поглинає весь надлишок і весь
+   дефіцит простору. Власний скрол — вміст ніколи не вилазить назовні.
+   Маска зверху розчиняє рядок, що заїжджає під картку мов, замість
+   того щоб різати його навпіл. */
+#feed {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding: 18px var(--pad) 6px;
+  display: flex; flex-direction: column; gap: 10px;
+  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 22px);
+          mask-image: linear-gradient(180deg, transparent 0, #000 22px);
+}
+
+/* Порожня стрічка — не діра, а сам знак: прогін між двома опорами,
+   яким безперервно біжить світло. Зникає, щойно приходить перше
+   повідомлення (JS ставить #feed[data-has]). */
+#hero {
+  margin: auto;
+  width: min(76%, 290px);
+  flex: none;
+}
+#hero svg { display: block; width: 100%; height: auto; overflow: visible; }
+#hero .halo {
+  fill: none; stroke: url(#heroGrad); stroke-width: 16; stroke-linecap: round;
+  opacity: .3; filter: blur(13px);
+}
+#hero .span  { fill: none; stroke: url(#heroGrad); stroke-width: 3.6; stroke-linecap: round; }
+#hero .light {
+  fill: none; stroke: #fff; stroke-width: 3.6; stroke-linecap: round;
+  stroke-dasharray: 11 210; stroke-dashoffset: 0;
+  animation: herorun 3.6s cubic-bezier(.55,.05,.45,.95) infinite;
+}
+@keyframes herorun { to { stroke-dashoffset: -221; } }
+#hero .pier { animation: pier 3.6s ease-in-out infinite; }
+#hero .pier.l { fill: var(--gold); }
+#hero .pier.r { fill: var(--sky); animation-delay: 1.8s; }
+@keyframes pier { 0%, 100% { opacity: .4; } 45% { opacity: 1; } }
+#hero .glowpier { filter: blur(7px); opacity: .55; }
+body.running #hero, #feed[data-has] #hero { display: none; }
+
+.msg {
+  position: relative;
+  max-width: 88%;
+  padding: 13px 16px;
+  border-radius: 18px;
+  font-size: var(--fs); line-height: 1.42;
+  overflow-wrap: break-word;          /* рве лише слово, довше за рядок */
+  box-shadow: 0 14px 30px -22px rgba(0,0,0,.95);
+  animation: msgin .45s cubic-bezier(.22,1,.36,1);
+}
+@keyframes msgin {
+  from { opacity: 0; transform: translateY(12px) scale(.97); filter: blur(7px); }
+  to   { opacity: 1; transform: none;                        filter: blur(0);   }
+}
+.msg .who {
+  display: block;
+  font-size: 13px; font-weight: 800;
+  letter-spacing: .06em; text-transform: uppercase;
+  margin-bottom: 5px;
+}
+.msg.L {
+  align-self: flex-start;
+  background: linear-gradient(135deg, rgba(255,194,103,.19), rgba(255,194,103,.07) 70%);
+  border-left: 5px solid var(--gold);
+  border-top-left-radius: 6px;
+}
+.msg.L .who { color: var(--gold); }
+.msg.R {
+  align-self: flex-end; text-align: right;
+  background: linear-gradient(225deg, rgba(111,201,255,.19), rgba(111,201,255,.07) 70%);
+  border-right: 5px solid var(--sky);
+  border-top-right-radius: 6px;
+}
+.msg.R .who { color: var(--sky); }
+
+/* Поки текст ще надходить — курсор у колір каналу. Видно, що йде переклад. */
+.msg.typing::after {
+  content: ""; display: inline-block;
+  width: .42em; height: .95em; vertical-align: -.13em; margin-left: .1em;
+  border-radius: 2px;
+  animation: caret 1.05s steps(2, end) infinite;
+}
+.msg.L.typing::after { background: var(--gold); }
+.msg.R.typing::after { background: var(--sky); }
+@keyframes caret { 0%, 49% { opacity: .9; } 50%, 100% { opacity: .12; } }
+
+.msg.sys {
+  align-self: center; max-width: 100%; text-align: center;
+  padding: 7px 16px; border-radius: 999px;
+  background: rgba(255,255,255,.05);
+  border: 1px solid var(--line-2); box-shadow: none;
+  font-size: 14px; font-weight: 600; color: var(--muted);
+}
+
+/* ──────────────────────────────────────────── Керування ── */
+#controls {
+  flex: none;
+  position: relative;
+  padding: 12px var(--pad) 16px;
+  background: linear-gradient(180deg, rgba(7,9,18,0), rgba(7,9,18,.86) 26%, rgba(7,9,18,.97));
+  display: flex; flex-direction: column; gap: 10px;
+}
+#controls::before {
+  content: ""; position: absolute; top: 0; left: 0; right: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,194,103,.4), rgba(169,156,255,.4) 50%, rgba(111,201,255,.4), transparent);
+}
+
+/* ─── Візуалізатор голосу: той самий міст, тільки живий.
+   Свіжий відлік входить у центрі (на шві) і розходиться хвилею до
+   обох вух. Кожна смуга анімується лише через transform:scaleY —
+   60 fps без перерахунку макета. */
+#viz {
+  position: relative;
+  height: 48px;
+  display: grid; place-items: center;
+}
+#vizGlow {
+  position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(60% 130% at 50% 50%, rgba(169,156,255,.55), rgba(111,201,255,.16) 45%, transparent 72%);
+  opacity: .12;
+  will-change: opacity, transform;
+}
+#vizBars {
+  position: relative;
+  display: flex; align-items: center; justify-content: center;
+  gap: 4px; width: 100%; height: 100%;
+}
+#vizBars i {
+  display: block; flex: 1 1 0; min-width: 3px; max-width: 7px;
+  height: 100%; border-radius: 4px;
+  transform: scaleY(.05); transform-origin: center;
+  opacity: .72;
+  will-change: transform;
+  transition: opacity .3s;
+}
+body.running #vizBars i { opacity: .95; }
+
+#btnMain {
+  position: relative; overflow: hidden;
+  width: 100%; height: 64px; border-radius: var(--r-lg);
+  border: none; cursor: pointer;
+  font-family: inherit; font-weight: 800; font-size: 20px; letter-spacing: .01em;
+  color: #0a0d18; background: var(--span);
+  box-shadow: 0 14px 34px -14px rgba(169,156,255,.65), inset 0 1px 0 rgba(255,255,255,.5);
+  transition: transform .1s, box-shadow .2s;
+}
+/* Блік, що повільно проходить кнопкою — вона читається як «жива» */
+#btnMain::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(105deg, transparent 38%, rgba(255,255,255,.55) 50%, transparent 62%);
+  transform: translateX(-130%);
+  animation: sheen 5s cubic-bezier(.5,0,.5,1) infinite;
+}
+@keyframes sheen { 0% { transform: translateX(-130%); } 55%, 100% { transform: translateX(130%); } }
+#btnMain:active { transform: scale(.985); box-shadow: 0 8px 20px -14px rgba(169,156,255,.6); }
+#btnMain:disabled { opacity: .5; }
+#btnMain:disabled::after { animation: none; opacity: 0; }
+#btnMain.running {
+  background: linear-gradient(100deg, #ff8a5e, #ff6f66 55%, #ff5f8d);
+  color: #fff;
+  box-shadow: 0 14px 34px -14px rgba(255,111,102,.7);
+  animation: pulse 1.9s ease-in-out infinite;
+}
+#btnMain.running::after { animation: none; opacity: 0; }
+@keyframes pulse {
+  0%, 100% { box-shadow: 0 14px 34px -14px rgba(255,111,102,.7), 0 0 0 0 rgba(255,111,102,.45); }
+  70%      { box-shadow: 0 14px 34px -14px rgba(255,111,102,.7), 0 0 0 18px rgba(255,111,102,0); }
+}
+#status {
+  min-height: 21px;
+  font-size: 15px; line-height: 1.4; color: var(--muted); text-align: center;
+}
+#status.error { color: var(--danger); font-weight: 600; }
+
+/* ──────────────────────────────────────────── Налаштування ── */
+/* Оверлей поза потоком: відкриття не зсуває жодного пікселя макета.
+   Шапка лишається над затемненням, тож шестерня і закриває панель. */
+#settings {
+  position: fixed; inset: 0; z-index: 20;
+  display: none;
+  background: rgba(5,7,14,.72);
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  padding: calc(var(--bar) + env(safe-area-inset-top)) var(--pad) var(--pad);
+  overflow-y: auto;
+}
+#settings.open { display: block; animation: fade .25s ease both; }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+.sheet {
+  position: relative;
+  max-width: 640px; margin: 0 auto;
+  padding: 18px;
+  background: linear-gradient(165deg, rgba(30,36,58,.92), rgba(14,18,32,.92));
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  box-shadow: 0 30px 60px rgba(0,0,0,.6);
+  display: flex; flex-direction: column; gap: 12px;
+  animation: sheetin .32s cubic-bezier(.22,1,.36,1) both;
+}
+@keyframes sheetin { from { opacity: 0; transform: translateY(-14px) scale(.98); } to { opacity: 1; transform: none; } }
+.sheet::before {
+  content: ""; position: absolute; left: 18px; right: 18px; top: 0; height: 2px;
+  border-radius: 2px; background: var(--span); opacity: .8;
+}
+label.field {
+  display: flex; flex-direction: column; gap: 7px;
+  font-size: 14px; font-weight: 600; color: var(--muted);
+}
+.keyrow { display: flex; gap: 9px; }
+.keyrow button {
+  flex: none;
+  width: 52px; border-radius: 12px;
+  background: rgba(255,255,255,.08); border: 1px solid var(--line); color: var(--paper);
+  font-size: 18px; cursor: pointer;
+}
+.keyrow button:active { background: rgba(255,255,255,.16); }
+.hint { font-size: 14px; line-height: 1.55; color: var(--muted); }
+.hint a { color: var(--sky); }
+
+/* ──────────────────────────────────────────── Адаптація ── */
+@media (max-width: 380px) {
+  :root { --pad: 11px; }
+  #ears { grid-template-columns: minmax(0,1fr) 40px minmax(0,1fr); }
+  .ear { padding: 11px 9px; }
+  .ear .tag { letter-spacing: .02em; }
+  .ear .tag i { display: none; }        /* сторону вже кажуть позиція і колір */
+  .ear select { font-size: 15px; padding-right: 20px; }
+  .ear[data-side="R"] select { padding-right: 0; padding-left: 20px; }
+  header h1 { font-size: 22px; }
+  .mark { width: 30px; height: 19px; }
+  #fsCtl button { width: 38px; }
+  #swap { width: 38px; height: 38px; }
+  #vizBars { gap: 2px; }
+}
+/* Низький екран: простір віддає візуалізатор, потім шапка, потім
+   інструкція. Стрічка — останнє, що можна різати. */
+@media (max-height: 700px) { #viz { height: 30px; } }
+@media (max-height: 560px) {
+  :root { --bar: 52px; }
+  #guide { display: none; }
+  #viz { height: 22px; }
+  #btnMain { height: 56px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #btnMain.running, #btnMain::after,
+  .aurora b, .seamcol::before, .mark .light,
+  #hero .light, #hero .pier,
+  .ear[data-state="live"]::before, .msg.typing::after { animation: none !important; }
+  #hero .light { opacity: 0; }
+  .msg { animation: none; }
+  .sheet, #settings.open { animation: none; }
+  *, *::before, *::after { transition: none !important; }
+}
 </style>
 </head>
 <body>
 
-<header>
-  <div class="brand">
-    <div class="seam"></div>
-    <div>
-      <h1>Міст</h1>
-      <p>жива розмова двома мовами</p>
-    </div>
-  </div>
-  <div id="fsCtl" role="group" aria-label="Розмір тексту">
-    <button id="fsDown" type="button" aria-label="Зменшити текст">A−</button>
-    <button id="fsUp" type="button" aria-label="Збільшити текст">A+</button>
-  </div>
-  <button id="btnSettings" class="iconbtn" aria-label="Налаштування">⚙</button>
-</header>
+<div class="aurora" id="aurora" aria-hidden="true"><b class="a"></b><b class="b"></b><b class="c"></b></div>
+<div class="grain" aria-hidden="true"></div>
 
-<div id="settings">
-  <label class="field">Gemini API-ключ
-    <div class="keyrow">
-      <input type="password" id="apiKey" placeholder="AIza..." autocomplete="off">
-      <button id="btnShowKey" type="button" aria-label="Показати ключ">👁</button>
-    </div>
-  </label>
-  <div class="hint">Ключ зберігається лише на цьому пристрої. Отримати: <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>.<br>Модель: gemini-3.5-live-translate-preview (public preview).</div>
-</div>
+<header>
+  <svg class="mark" viewBox="0 0 34 21" aria-hidden="true">
+    <defs>
+      <linearGradient id="markGrad" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0" stop-color="#ffc267"/>
+        <stop offset=".5" stop-color="#a99cff"/>
+        <stop offset="1" stop-color="#6fc9ff"/>
+      </linearGradient>
+    </defs>
+    <path class="halo"  d="M2.6 16.4C2.6 4.6 31.4 4.6 31.4 16.4" pathLength="100"/>
+    <path class="span"  d="M2.6 16.4C2.6 4.6 31.4 4.6 31.4 16.4" pathLength="100"/>
+    <path class="light" d="M2.6 16.4C2.6 4.6 31.4 4.6 31.4 16.4" pathLength="100"/>
+    <circle cx="2.6"  cy="16.8" r="3.3" fill="#ffc267"/>
+    <circle cx="31.4" cy="16.8" r="3.3" fill="#6fc9ff"/>
+  </svg>
+  <h1>Міст</h1>
+  <div id="fsCtl" role="group" aria-label="Розмір тексту перекладу">
+    <button id="fsDown" type="button" aria-label="Зменшити текст">A−</button>
+    <button id="fsUp"   type="button" aria-label="Збільшити текст">A+</button>
+  </div>
+  <button id="btnSettings" class="iconbtn" type="button" aria-label="Налаштування">⚙</button>
+</header>
 
 <div id="ears">
   <div class="ear" id="earL" data-side="L">
-    <span class="tag">◀ Ліве вухо</span>
+    <span class="tag"><i>◀</i> Ліве вухо</span>
     <select id="langL" aria-label="Мова лівого навушника"></select>
     <div class="earstate"><span class="dot" id="dotL"></span><span id="stateL">вимкнено</span></div>
   </div>
   <div class="seamcol">
-    <button id="swap" title="Поміняти вуха місцями" aria-label="Поміняти канали">⇄</button>
+    <button id="swap" type="button" title="Поміняти вуха місцями" aria-label="Поміняти канали">⇄</button>
   </div>
   <div class="ear" id="earR" data-side="R">
-    <span class="tag">Праве вухо ▶</span>
+    <span class="tag">Праве вухо <i>▶</i></span>
     <select id="langR" aria-label="Мова правого навушника"></select>
     <div class="earstate"><span class="dot" id="dotR"></span><span id="stateR">вимкнено</span></div>
   </div>
 </div>
 
-<div id="guide">
-  🎧 Розділіть навушники: <b class="l">лівий</b> — тому, хто розуміє мову зліва, <b class="r">правий</b> — тому, хто розуміє мову справа. Говоріть по черзі в телефон — кожен почує лише переклад «своєю» мовою.
+<div id="feed" aria-live="polite">
+  <div id="hero" aria-hidden="true">
+    <svg viewBox="0 0 240 112">
+      <defs>
+        <linearGradient id="heroGrad" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0"  stop-color="#ffc267"/>
+          <stop offset=".5" stop-color="#a99cff"/>
+          <stop offset="1"  stop-color="#6fc9ff"/>
+        </linearGradient>
+      </defs>
+      <path class="halo"  d="M20 84C20 16 220 16 220 84" pathLength="100"/>
+      <path class="span"  d="M20 84C20 16 220 16 220 84" pathLength="100"/>
+      <path class="light" d="M20 84C20 16 220 16 220 84" pathLength="100"/>
+      <circle class="pier l glowpier" cx="20"  cy="88" r="13" fill="#ffc267"/>
+      <circle class="pier r glowpier" cx="220" cy="88" r="13" fill="#6fc9ff"/>
+      <circle class="pier l" cx="20"  cy="88" r="7"/>
+      <circle class="pier r" cx="220" cy="88" r="7"/>
+    </svg>
+  </div>
 </div>
 
-<div id="feed" aria-live="polite"></div>
+<div id="guide">
+  <p>🎧 Розділіть навушники: <b class="l">лівий</b> — тому, хто розуміє мову зліва, <b class="r">правий</b> — тому, хто розуміє мову справа.</p>
+  <p>Говоріть по черзі в телефон — кожен почує лише переклад «своєю» мовою.</p>
+</div>
 
 <div id="controls">
-  <div id="micBar"><div id="micLevel"></div></div>
-  <button id="btnMain">Почати</button>
+  <div id="viz" aria-hidden="true">
+    <div id="vizGlow"></div>
+    <div id="vizBars"></div>
+  </div>
+  <button id="btnMain" type="button">Почати</button>
   <div id="status">Введіть API-ключ у налаштуваннях і натисніть «Почати»</div>
+</div>
+
+<div id="settings" role="dialog" aria-modal="true" aria-label="Налаштування">
+  <div class="sheet">
+    <label class="field">Gemini API-ключ
+      <div class="keyrow">
+        <input type="password" id="apiKey" placeholder="AIza..." autocomplete="off">
+        <button id="btnShowKey" type="button" aria-label="Показати ключ">👁</button>
+      </div>
+    </label>
+    <div class="hint">Ключ зберігається лише на цьому пристрої. Отримати: <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>.<br>Модель: gemini-3.5-live-translate-preview (public preview).</div>
+  </div>
 </div>
 
 <script>
@@ -335,6 +797,79 @@ const app = {
   feedCap: 120
 };
 
+const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/* ────────────────────────────── Візуалізатор голосу ── */
+/* Смуги розходяться від центру (шва) до обох вух: свіжий відлік
+   потрапляє у hist[0] і з кожним кроком зсувається назовні. Малюємо
+   лише transform:scaleY — жодного перерахунку макета за кадр.
+   Він же живить --energy для поля світла на тлі.                  */
+const viz = (() => {
+  const N = 29;
+  const host = $("vizBars");
+  const glow = $("vizGlow");
+  const aurora = $("aurora");
+  const mid = (N - 1) / 2;
+  const H = Math.ceil(mid) + 2;
+  const hist = new Float32Array(H);
+  const bars = [];
+
+  const GOLD = [255, 194, 103], IRIS = [169, 156, 255], SKY = [111, 201, 255];
+  const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
+
+  for (let i = 0; i < N; i++) {
+    const p = i / (N - 1);
+    const c = p < .5 ? mix(GOLD, IRIS, p * 2) : mix(IRIS, SKY, (p - .5) * 2);
+    const el = document.createElement("i");
+    el.style.background = "rgb(" + c[0] + "," + c[1] + "," + c[2] + ")";
+    host.appendChild(el);
+    bars.push(el);
+  }
+
+  let target = 0, level = 0, tick = 0, phase = 0;
+
+  function frame() {
+    requestAnimationFrame(frame);
+    if (document.hidden) return;
+
+    level += (target - level) * .3;
+    target *= .9;                       // спад, поки не прийшов новий відлік
+
+    if ((tick++ & 1) === 0) {           // хвиля повзе ~30 разів на секунду
+      hist.copyWithin(1, 0, H - 1);
+      hist[0] = app.running ? level : 0;
+    }
+    phase += .04;
+
+    for (let i = 0; i < N; i++) {
+      const d = Math.abs(i - mid);
+      // Силует прогону: 1 у центрі (на шві) → майже 0 біля вух.
+      // Спільний для спокою і ефіру, тож форма не стрибає при старті.
+      const arch = Math.pow(1 - d / (mid + 1), .75);
+      let v;
+      if (app.running) {
+        v = Math.max(arch * .26, hist[Math.round(d)] * (.35 + .65 * arch));
+      } else if (REDUCED) {
+        v = arch * .58;
+      } else {
+        v = arch * (.6 + Math.sin(phase - d * .5) * .18);   // спокійне дихання
+      }
+      bars[i].style.transform = "scaleY(" + (.05 + Math.min(1, v) * .95).toFixed(3) + ")";
+    }
+
+    const e = Math.min(1, level * 1.15);
+    glow.style.opacity = (.1 + e * .8).toFixed(3);
+    glow.style.transform = "scaleX(" + (.55 + e * .45).toFixed(3) + ")";
+    aurora.style.setProperty("--energy", e.toFixed(3));
+  }
+  requestAnimationFrame(frame);
+
+  return {
+    setLevel(rms) { target = Math.pow(Math.min(1, rms * 4.6), .68); },
+    reset() { target = 0; hist.fill(0); }
+  };
+})();
+
 /* ────────────────────────────── Розмір тексту стрічки ── */
 const FS_STEPS = [17, 20, 24, 28, 33];
 let fsIdx = Math.min(FS_STEPS.length - 1, Math.max(0, +store.get("mist.fs", 1) | 0));
@@ -363,6 +898,14 @@ $("apiKey").value = store.get("mist.key", "");
 $("btnSettings").onclick = () => $("settings").classList.toggle("open");
 if (!$("apiKey").value) $("settings").classList.add("open");
 
+/* Оверлей закривається дотиком по затемненню або клавішею Esc */
+$("settings").addEventListener("click", e => {
+  if (e.target === $("settings")) $("settings").classList.remove("open");
+});
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape") $("settings").classList.remove("open");
+});
+
 $("btnShowKey").onclick = () => {
   const i = $("apiKey");
   i.type = i.type === "password" ? "text" : "password";
@@ -387,6 +930,9 @@ function setEar(side, state, cls) {
   $("state" + side).textContent = state;
   $("dot" + side).className = "dot" + (cls ? " " + cls : "");
   $("ear" + side).dataset.state = cls || "off";
+  // Поле світла нахиляється до того вуха, у яке зараз ллється переклад
+  const live = ["L", "R"].filter(s => $("ear" + s).dataset.state === "live");
+  document.body.dataset.live = live.length === 1 ? live[0] : "";
 }
 function addMsg(side, who, text) {
   const feed = $("feed");
@@ -399,7 +945,8 @@ function addMsg(side, who, text) {
   }
   el.appendChild(document.createTextNode(text));
   feed.appendChild(el);
-  while (feed.children.length > app.feedCap) feed.removeChild(feed.firstChild);
+  feed.dataset.has = "1";             /* прибирає герой порожньої стрічки */
+  while (feed.children.length > app.feedCap + 1) feed.removeChild(feed.children[1]);
   feed.scrollTop = feed.scrollHeight;
   return el;
 }
@@ -539,6 +1086,7 @@ class TranslateStream {
 
     this.ws.onclose = ev => {
       this.ready = false;
+      this.endTurn();
       if (this.closedByUs || app.stopping) { setEar(this.side, "вимкнено", ""); return; }
       if (ev.code === 1007 || ev.code === 1008 || /API key/i.test(ev.reason || "")) {
         setEar(this.side, "помилка ключа", "err");
@@ -565,8 +1113,10 @@ class TranslateStream {
 
     if (c.outputTranscription && c.outputTranscription.text) {
       this.curText += c.outputTranscription.text;
-      if (!this.curMsgEl)
+      if (!this.curMsgEl) {
         this.curMsgEl = addMsg(this.side, "→ " + (LANG_NAME[this.target] || this.target), "");
+        this.curMsgEl.classList.add("typing");
+      }
       this.curMsgEl.lastChild.textContent = this.curText;
       $("feed").scrollTop = $("feed").scrollHeight;
     }
@@ -577,10 +1127,13 @@ class TranslateStream {
       }
     }
 
-    if (c.turnComplete) {
-      this.curMsgEl = null;
-      this.curText = "";
-    }
+    if (c.turnComplete) this.endTurn();
+  }
+
+  endTurn() {
+    if (this.curMsgEl) this.curMsgEl.classList.remove("typing");
+    this.curMsgEl = null;
+    this.curText = "";
   }
 
   playChunk(b64) {
@@ -616,6 +1169,7 @@ class TranslateStream {
   close() {
     this.closedByUs = true;
     clearTimeout(this.speakTimer);
+    this.endTurn();
     try { this.ws && this.ws.close(); } catch {}
     setEar(this.side, "вимкнено", "");
   }
@@ -680,7 +1234,7 @@ async function startSession() {
 
   app.workletNode.port.onmessage = ev => {
     const { pcm, level } = ev.data;
-    $("micLevel").style.width = Math.min(100, level * 260) + "%";
+    viz.setLevel(level);
     const b64 = abToB64(pcm);
     app.streams.L.sendAudio(b64);
     app.streams.R.sendAudio(b64);
@@ -715,7 +1269,7 @@ function stopSession() {
   cleanupAudio();
   try { app.wakeLock && app.wakeLock.release(); } catch {}
   app.wakeLock = null;
-  $("micLevel").style.width = "0%";
+  viz.reset();
   $("btnMain").textContent = "Почати";
   $("btnMain").classList.remove("running");
   if (!$("status").classList.contains("error"))
